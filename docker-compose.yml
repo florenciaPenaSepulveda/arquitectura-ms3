@@ -1,0 +1,23 @@
+services:
+  # Base de datos PostgreSQL
+  postgres-ms3:
+    image: postgres:15-alpine
+    container_name: ms3_db
+    environment:
+      POSTGRES_USER: user_ms3
+      POSTGRES_PASSWORD: password_ms3
+      POSTGRES_DB: reservations_db
+    ports:
+      - "5433:5432" # Puerto externo 5433 para no chocar con otros postgres locales
+    volumes:
+      - pgdata_ms3:/var/lib/postgresql/data
+
+  # Servidor de Mensajería NATS
+  nats-server:
+    image: nats:latest
+    container_name: nats_server
+    ports:
+      - "4222:4222" # Puerto por defecto de NATS
+
+volumes:
+  pgdata_ms3:
