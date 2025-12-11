@@ -1,23 +1,47 @@
+version: '3.8'
+
 services:
-  # Base de datos PostgreSQL
-  postgres-ms3:
-    image: postgres:15-alpine
-    container_name: ms3_db
+  # 1. NATS
+  nats:
+    image: nats:latest
+    container_name: nats-ms3-local
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  # 2. POSTGRESQL (¡Nuevo!)
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: ms3-postgres
+    restart: always
     environment:
       POSTGRES_USER: user_ms3
       POSTGRES_PASSWORD: password_ms3
       POSTGRES_DB: reservations_db
     ports:
-      - "5433:5432" # Puerto externo 5433 para no chocar con otros postgres locales
+      # Mapeamos el puerto 5432 interno al 5433 de tu PC
+      # Así puedes usar DBeaver desde Windows conectando al puerto 5433
+      - "5433:5432"
     volumes:
-      - pgdata_ms3:/var/lib/postgresql/data
+      # Guardamos los datos en una carpeta local para no perderlos
+      - ./postgres-data:/var/lib/postgresql/data
 
-  # Servidor de Mensajería NATS
-  nats-server:
-    image: nats:latest
-    container_name: nats_server
+  # 3. TU MICROSERVICIO
+  app: 
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: ms3-service
+    restart: always
+    depends_on:
+      - nats
+      - postgres-db  # <--- Ahora esperamos a la DB también
     ports:
-      - "4222:4222" # Puerto por defecto de NATS
+      - "3003:3003"
+    environment:
+      - NATS_URL=nats://nats:4222
+      - PORT=3003
+    networks:
+      - default
 
-volumes:
-  pgdata_ms3:
+# No es necesario definir redes complejas si usamos la default
