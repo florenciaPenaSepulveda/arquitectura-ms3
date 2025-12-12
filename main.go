@@ -2,52 +2,84 @@ package main
 
 import (
 	"log"
-	"ms3/db"       // Asegúrate de que tu carpeta db tenga el package db
-	"ms3/handlers" // Asegúrate de que tu carpeta handlers tenga el package handlers
-	"os"
-	"os/signal"
-	"syscall"
 
+	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
+
+	// Asegúrate de que tu go.mod se llame "ms3". Si se llama diferente, ajusta estos imports.
+	"ms3/db"
+	"ms3/handlers"
+	"ms3/models"
+	"ms3/services"
 )
 
 func main() {
-	// 1. Inicializar la Base de Datos
-	database := db.InitDB()
+	// ---------------------------------------------------------
+	// 1. CONEXIÓN A BASE DE DATOS
+	// ---------------------------------------------------------
+	// Revisa en tu archivo db/db.go cómo se llama la función.
+	// Si es 'func Connect() ...', cambia Init() por Connect()
+	dbInstance := db.InitDB()
 
-	// 2. Configurar la conexión a NATS (Compatible con Docker y Local)
-	// Intentamos leer la variable de entorno que pusimos en el docker-compose.yml
-	natsURL := os.Getenv("NATS_URL")
-
-	// Si la variable está vacía (significa que estás corriendo local sin Docker),
-	// usamos la dirección por defecto (localhost:4222)
-	if natsURL == "" {
-		natsURL = nats.DefaultURL
-	}
-
-	// 3. Conectarse a NATS
-	nc, err := nats.Connect(natsURL)
+	// ---------------------------------------------------------
+	// 2. MIGRACIONES AUTOMÁTICAS
+	// ---------------------------------------------------------
+	// Esto crea la tabla 'mechanic_availabilities' automáticamente
+	err := dbInstance.AutoMigrate(&models.Reservation{}, &models.MechanicAvailability{})
 	if err != nil {
-		log.Fatal("❌ Error conectando a NATS: ", err)
+		log.Fatal("Error migrando la BD:", err)
 	}
-	// Nos aseguramos de cerrar la conexión al terminar
+
+	// ---------------------------------------------------------
+	// 3. INICIALIZACIÓN DE SERVICIOS
+	// ---------------------------------------------------------
+	availService := services.NewAvailabilityService(dbInstance)
+	availHandler := handlers.NewAvailabilityHandler(availService)
+
+	// Si tu ReservationHandler necesita la DB, pásasela aquí.
+	// Si tu constructor es diferente, ajústalo.
+	resHandler := handlers.NewReservationHandler(dbInstance)
+
+	// ---------------------------------------------------------
+	// 4. CONEXIÓN A NATS
+	// ---------------------------------------------------------
+	// Usamos el nombre del contenedor de NATS como host
+	// Usamos el nombre del contenedor de NATS como host
+	nc, err := nats.Connect("nats://nats-ms3-local:4222")
+	if err != nil {
+		log.Fatal("No se pudo conectar a NATS:", err)
+	}
 	defer nc.Close()
 
-	log.Println("✅ Conectado a NATS en:", natsURL)
+	// Suscribirse a mensajes de NATS (Lo que manda el test-client)
+	_, err = nc.QueueSubscribe("reservation.create", "reservation-workers", func(msg *nats.Msg) {
+		resHandler.HandleCreateReservation(msg)
+	})
+	if err != nil {
+		log.Fatal("Error suscribiendo a NATS:", err)
+	}
 
-	// 4. Registrar los Handlers (Suscribirse a los mensajes)
-	// Aquí le pasamos la conexión de NATS y la base de datos a tus funciones
-	handlers.CreateReservation(nc, database)
-	handlers.GetReservations(nc, database)
-	handlers.GetClientReservations(nc, database)
-	handlers.UpdateReservation(nc, database)
+	// ---------------------------------------------------------
+	// 5. SERVIDOR HTTP (GIN)
+	// ---------------------------------------------------------
+	r := gin.Default()
 
-	log.Println("🚀 MS3 (Reservas) corriendo y esperando mensajes...")
+	// Configuración CORS básica
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
 
-	// 5. Esperar señal de apagado (Ctrl + C) para cerrar limpio
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	// Rutas de la Agenda
+	r.POST("/availability", availHandler.CreateSchedule)
+	r.GET("/availability/slots", availHandler.GetSlots)
 
-	log.Println("Apagando servidor...")
+	log.Println("Servidor MS3 corriendo en puerto :8080")
+	r.Run(":8080")
 }

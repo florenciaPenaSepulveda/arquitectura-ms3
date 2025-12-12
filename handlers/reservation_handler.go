@@ -1,26 +1,27 @@
 package handlers
 
 import (
-	"encoding/json"
-	"net/http"
+	"log"
+
+	"github.com/nats-io/nats.go"
+	"gorm.io/gorm"
 )
 
-// CreateReservationHandler simula la respuesta de crear una reserva
-func CreateReservationHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. Aquí iría la lógica de llamar a la base de datos (lo haremos después)
-	// AGREGA ESTO AL PRINCIPIO:
-	if r.Method != http.MethodPost {
-		http.Error(w, "Método no permitido", http.StatusMethodNotAllowed)
-		return
-	}
+// 1. Definimos la estructura (Esto es lo que faltaba)
+type ReservationHandler struct {
+	DB *gorm.DB
+}
 
-	// ... el resto de tu código sigue igual ...
-	// 2. Por ahora, respondemos que todo salió bien (Status 201 Created)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+// 2. El Constructor
+func NewReservationHandler(db *gorm.DB) *ReservationHandler {
+	return &ReservationHandler{DB: db}
+}
 
-	// 3. Enviamos un mensaje de respuesta
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Reserva creada exitosamente",
-	})
+// 3. Tu lógica para procesar mensajes (Ejemplo básico)
+func (h *ReservationHandler) HandleCreateReservation(msg *nats.Msg) {
+	log.Println("Mensaje recibido en reserva:", string(msg.Data))
+	// Aquí iría tu lógica para guardar en BD...
+
+	// Responder al NATS (si es necesario)
+	msg.Respond([]byte("Reserva procesada"))
 }
