@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-
+	"os"
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
 
@@ -10,7 +10,6 @@ import (
 	"ms3/db"
 	"ms3/handlers"
 	"ms3/models"
-	"ms3/services"
 )
 
 func main() {
@@ -33,31 +32,31 @@ func main() {
 	// ---------------------------------------------------------
 	// 3. INICIALIZACIÓN DE SERVICIOS
 	// ---------------------------------------------------------
-	availService := services.NewAvailabilityService(dbInstance)
-	availHandler := handlers.NewAvailabilityHandler(availService)
-
-	// Si tu ReservationHandler necesita la DB, pásasela aquí.
-	// Si tu constructor es diferente, ajústalo.
-	resHandler := handlers.NewReservationHandler(dbInstance)
+	//availService := services.NewAvailabilityService(dbInstance)
+	//availHandler := handlers.NewAvailabilityHandler(availService)
 
 	// ---------------------------------------------------------
 	// 4. CONEXIÓN A NATS
 	// ---------------------------------------------------------
 	// Usamos el nombre del contenedor de NATS como host
 	// Usamos el nombre del contenedor de NATS como host
-	nc, err := nats.Connect("nats://nats-ms3-local:4222")
+	natsURL := os.Getenv("NATS_URL")
+	if natsURL == "" {
+		natsURL = "nats://nats:4222" // service name
+	}
+
+	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		log.Fatal("No se pudo conectar a NATS:", err)
 	}
 	defer nc.Close()
 
-	// Suscribirse a mensajes de NATS (Lo que manda el test-client)
-	_, err = nc.QueueSubscribe("reservation.create", "reservation-workers", func(msg *nats.Msg) {
-		resHandler.HandleCreateReservation(msg)
-	})
-	if err != nil {
-		log.Fatal("Error suscribiendo a NATS:", err)
-	}
+	handlers.CreateReservation(nc, dbInstance)
+	handlers.GetReservations(nc, dbInstance)
+	handlers.GetClientReservations(nc, dbInstance)
+	handlers.UpdateReservation(nc, dbInstance)
+	handlers.GetPendingReservations(nc, dbInstance)
+	handlers.GetMechanicReservations(nc, dbInstance)
 
 	// ---------------------------------------------------------
 	// 5. SERVIDOR HTTP (GIN)
@@ -77,8 +76,8 @@ func main() {
 	})
 
 	// Rutas de la Agenda
-	r.POST("/availability", availHandler.CreateSchedule)
-	r.GET("/availability/slots", availHandler.GetSlots)
+	//r.POST("/availability", availHandler.CreateSchedule)
+	//r.GET("/availability/slots", availHandler.GetSlots)
 
 	log.Println("Servidor MS3 corriendo en puerto :8080")
 	r.Run(":8080")

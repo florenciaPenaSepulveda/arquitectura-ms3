@@ -37,11 +37,11 @@ services:
       # CORRECCIÓN AQUÍ:
       # Izquierda (8080): Puerto de tu PC (Windows) para Postman
       # Derecha (8080): Puerto donde escucha tu código Go (Gin)
-      - "8080:8080" 
+      - "8081:8080" 
     environment:
       # Esta variable la ignoramos un poco si hardcodeaste el host en main.go,
       # pero es bueno tenerla bien.
       - NATS_URL=nats://nats-ms3-local:4222 
-      - PORT=8080
+      - PORT=8081
     networks:
       - default

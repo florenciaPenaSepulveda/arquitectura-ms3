@@ -1,19 +1,16 @@
 package models
 
-import (
-	"time"
-
-	"gorm.io/gorm"
-)
+import "time"
 
 type Reservation struct {
-	gorm.Model            // Esto agrega ID, CreatedAt, UpdatedAt automáticamente
-	UserID      string    `json:"user_id"`
-	CarID       string    `json:"car_id"`
-	MechanicID  uint      `json:"mechanic_id"` // NECESARIO para la agenda
-	Date        time.Time `json:"date"`
-	StartTime   string    `json:"start_time"` // Ej: "10:00" (NUEVO)
-	EndTime     string    `json:"end_time"`   // Ej: "11:00" (NUEVO)
-	Status      string    `json:"status"`     // Ej: "CONFIRMED" (NUEVO)
-	Description string    `json:"description"`
+  ID          uint      `gorm:"primaryKey" json:"id"`
+  UserID      string    `gorm:"not null" json:"user_id"`
+  CarID       string    `gorm:"not null" json:"car_id"`
+  MechanicID  *string   `gorm:"" json:"mechanic_id"` // nullable
+  Date        string    `gorm:"not null" json:"date"`
+  Description string    `gorm:"type:text" json:"description"`
+  Status      string    `gorm:"not null" json:"status"`
+  CreatedAt   time.Time `json:"created_at"`
+  UpdatedAt   time.Time `json:"updated_at"`
 }
+
