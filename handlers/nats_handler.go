@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"ms3/models"
+	"strconv" // <--- AGREGADO: Necesario para convertir texto a número
 	"strings"
 
 	"github.com/nats-io/nats.go"
@@ -204,9 +205,20 @@ func ProcessUpdateReservation(db *gorm.DB, data []byte) []byte {
 	}
 
 	r.Status = upd.Status
+
+	// --- CORRECCIÓN AQUÍ ---
 	if upd.MechanicID != "" {
-		r.MechanicID = &upd.MechanicID
+		// Convertimos el string a número (base 10, 64 bits)
+		idConvertido, err := strconv.ParseUint(upd.MechanicID, 10, 64)
+		if err != nil {
+			log.Printf("Error convirtiendo MechanicID: %v", err)
+			// Podrías retornar error, o simplemente ignorar el campo si viene mal
+		} else {
+			// Asignamos el valor convertido a uint
+			r.MechanicID = uint(idConvertido)
+		}
 	}
+	// -----------------------
 
 	if err := db.Save(&r).Error; err != nil {
 		return []byte(`{"error":"No se pudo actualizar"}`)

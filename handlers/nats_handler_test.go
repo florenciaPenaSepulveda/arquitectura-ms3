@@ -58,13 +58,13 @@ func TestProcessCreateReservation_WrappedFormat(t *testing.T) {
 
 	// Simulamos el JSON envuelto
 	inputJSON := `{
-		"data": {
-			"user_id": "user-123",
-			"car_id": "car-99",
-			"date": "2025-10-10"
-		},
-		"id": "msg-id"
-	}`
+        "data": {
+            "user_id": "user-123",
+            "car_id": "car-99",
+            "date": "2025-10-10"
+        },
+        "id": "msg-id"
+    }`
 
 	responseBytes := ProcessCreateReservation(db, []byte(inputJSON))
 
@@ -150,7 +150,7 @@ func TestProcessUpdateReservation_BadJSON_ReturnsError(t *testing.T) {
 func TestProcessUpdateReservation_NotFound_ReturnsError(t *testing.T) {
 	db := setupTestDB(t)
 
-	payload := `{"data":{"id":999,"status":"ACEPTADA","mechanic_id":"m1"}}`
+	payload := `{"data":{"id":999,"status":"ACEPTADA","mechanic_id":"1"}}`
 	out := ProcessUpdateReservation(db, []byte(payload))
 
 	assert.Equal(t, `{"error":"Reserva no encontrada"}`, string(out))
@@ -164,11 +164,12 @@ func TestProcessUpdateReservation_Success_UpdatesStatusAndMechanic(t *testing.T)
 	err := db.Create(&r).Error
 	assert.NoError(t, err)
 
+	// --- CORRECCIÓN AQUÍ ---
 	payload := map[string]any{
 		"data": map[string]any{
 			"id":          r.ID,
 			"status":      "ACEPTADA",
-			"mechanic_id": "m1",
+			"mechanic_id": "123", // Enviamos un número como string ("123")
 		},
 	}
 	b, _ := json.Marshal(payload)
@@ -180,10 +181,9 @@ func TestProcessUpdateReservation_Success_UpdatesStatusAndMechanic(t *testing.T)
 	assert.NoError(t, err)
 
 	assert.Equal(t, "ACEPTADA", updated.Status)
-	// mechanic_id en tu código es *string, así que checkea pointer
-	if assert.NotNil(t, updated.MechanicID) {
-		assert.Equal(t, "m1", *updated.MechanicID)
-	}
+
+	// Ahora MechanicID es uint, comparamos directo (sin punteros *)
+	assert.Equal(t, uint(123), updated.MechanicID)
 }
 
 func TestProcessCreateReservation_DBError(t *testing.T) {
@@ -263,10 +263,10 @@ func Test_CreateReservation_NATS_Envelope_RespondsNestFormat(t *testing.T) {
 	_ = nc.Flush()
 
 	payload := []byte(`{
-		"pattern":"reservation.create",
-		"data":{"user_id":"u2","car_id":"c2","date":"2025-10-11"},
-		"id":"req-123"
-	}`)
+        "pattern":"reservation.create",
+        "data":{"user_id":"u2","car_id":"c2","date":"2025-10-11"},
+        "id":"req-123"
+    }`)
 
 	msg, err := nc.Request("reservation.create", payload, 2*time.Second)
 	assert.NoError(t, err)
