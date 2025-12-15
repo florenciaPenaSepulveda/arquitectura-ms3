@@ -20,6 +20,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("Falló conexión DB: %v", err)
 	}
+	// IMPORTANTE: AutoMigrate crea la tabla para evitar el error "no such table"
 	err = db.AutoMigrate(&models.Reservation{})
 	if err != nil {
 		t.Fatalf("Falló automigrate: %v", err)
@@ -56,12 +57,12 @@ func Test_decodeString_Raw(t *testing.T) {
 func TestProcessCreateReservation_WrappedFormat(t *testing.T) {
 	db := setupTestDB(t)
 
-	// Simulamos el JSON envuelto
+	// CORREGIDO: Fecha en formato ISO 8601 completo
 	inputJSON := `{
         "data": {
             "user_id": "user-123",
             "car_id": "car-99",
-            "date": "2025-10-10"
+            "date": "2025-10-10T00:00:00Z" 
         },
         "id": "msg-id"
     }`
@@ -78,8 +79,8 @@ func TestProcessCreateReservation_WrappedFormat(t *testing.T) {
 func TestProcessCreateReservation_DirectFormat(t *testing.T) {
 	db := setupTestDB(t)
 
-	// Formato directo (sin wrapper "data")
-	inputJSON := `{"user_id":"user-777","car_id":"car-1","date":"2025-10-11"}`
+	// CORREGIDO: Fecha en formato ISO 8601 completo
+	inputJSON := `{"user_id":"user-777","car_id":"car-1","date":"2025-10-11T00:00:00Z"}`
 
 	responseBytes := ProcessCreateReservation(db, []byte(inputJSON))
 
@@ -150,7 +151,8 @@ func TestProcessUpdateReservation_BadJSON_ReturnsError(t *testing.T) {
 func TestProcessUpdateReservation_NotFound_ReturnsError(t *testing.T) {
 	db := setupTestDB(t)
 
-	payload := `{"data":{"id":999,"status":"ACEPTADA","mechanic_id":"1"}}`
+	// CORREGIDO: mechanic_id como número (int) para evitar errores de tipo en unmarshal
+	payload := `{"data":{"id":999,"status":"ACEPTADA","mechanic_id":1}}`
 	out := ProcessUpdateReservation(db, []byte(payload))
 
 	assert.Equal(t, `{"error":"Reserva no encontrada"}`, string(out))
@@ -169,7 +171,7 @@ func TestProcessUpdateReservation_Success_UpdatesStatusAndMechanic(t *testing.T)
 		"data": map[string]any{
 			"id":          r.ID,
 			"status":      "ACEPTADA",
-			"mechanic_id": "123", // Enviamos un número como string ("123")
+			"mechanic_id": 123, // CORREGIDO: Enviamos un número (123) en vez de string ("123")
 		},
 	}
 	b, _ := json.Marshal(payload)
@@ -182,7 +184,7 @@ func TestProcessUpdateReservation_Success_UpdatesStatusAndMechanic(t *testing.T)
 
 	assert.Equal(t, "ACEPTADA", updated.Status)
 
-	// Ahora MechanicID es uint, comparamos directo (sin punteros *)
+	// Ahora MechanicID es uint, comparamos directo
 	assert.Equal(t, uint(123), updated.MechanicID)
 }
 
@@ -192,7 +194,8 @@ func TestProcessCreateReservation_DBError(t *testing.T) {
 	// Provocamos error en Create: eliminamos la tabla
 	_ = db.Migrator().DropTable(&models.Reservation{})
 
-	inputJSON := `{"user_id":"user-err","car_id":"c1","date":"2025-10-10"}`
+	// CORREGIDO: Fecha ISO completa
+	inputJSON := `{"user_id":"user-err","car_id":"c1","date":"2025-10-10T00:00:00Z"}`
 	out := ProcessCreateReservation(db, []byte(inputJSON))
 
 	assert.Equal(t, `{"error":"No se pudo guardar en BD"}`, string(out))
@@ -233,7 +236,7 @@ type nestReplyMsg struct {
 }
 
 func Test_CreateReservation_NATS_DirectPayload_RespondsRaw(t *testing.T) {
-	db := setupTestDB(t) // <-- usa la tuya existente
+	db := setupTestDB(t)
 	s, nc := setupNATS(t)
 	defer nc.Close()
 	defer s.Shutdown()
@@ -241,7 +244,8 @@ func Test_CreateReservation_NATS_DirectPayload_RespondsRaw(t *testing.T) {
 	CreateReservation(nc, db)
 	_ = nc.Flush()
 
-	payload := []byte(`{"user_id":"u1","car_id":"c1","date":"2025-10-10"}`)
+	// CORREGIDO: Fecha ISO completa
+	payload := []byte(`{"user_id":"u1","car_id":"c1","date":"2025-10-10T00:00:00Z"}`)
 
 	msg, err := nc.Request("reservation.create", payload, 2*time.Second)
 	assert.NoError(t, err)
@@ -262,9 +266,10 @@ func Test_CreateReservation_NATS_Envelope_RespondsNestFormat(t *testing.T) {
 	CreateReservation(nc, db)
 	_ = nc.Flush()
 
+	// CORREGIDO: Fecha ISO completa
 	payload := []byte(`{
         "pattern":"reservation.create",
-        "data":{"user_id":"u2","car_id":"c2","date":"2025-10-11"},
+        "data":{"user_id":"u2","car_id":"c2","date":"2025-10-11T00:00:00Z"},
         "id":"req-123"
     }`)
 
