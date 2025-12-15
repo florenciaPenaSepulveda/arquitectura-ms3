@@ -14,13 +14,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// Función auxiliar para crear una DB de prueba rápida
 func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("Falló conexión DB: %v", err)
 	}
-	// IMPORTANTE: AutoMigrate crea la tabla para evitar el error "no such table"
 	err = db.AutoMigrate(&models.Reservation{})
 	if err != nil {
 		t.Fatalf("Falló automigrate: %v", err)
@@ -57,7 +55,6 @@ func Test_decodeString_Raw(t *testing.T) {
 func TestProcessCreateReservation_WrappedFormat(t *testing.T) {
 	db := setupTestDB(t)
 
-	// CORREGIDO: Fecha en formato ISO 8601 completo
 	inputJSON := `{
         "data": {
             "user_id": "user-123",
@@ -79,7 +76,6 @@ func TestProcessCreateReservation_WrappedFormat(t *testing.T) {
 func TestProcessCreateReservation_DirectFormat(t *testing.T) {
 	db := setupTestDB(t)
 
-	// CORREGIDO: Fecha en formato ISO 8601 completo
 	inputJSON := `{"user_id":"user-777","car_id":"car-1","date":"2025-10-11T00:00:00Z"}`
 
 	responseBytes := ProcessCreateReservation(db, []byte(inputJSON))
@@ -143,16 +139,15 @@ func TestProcessGetClientReservations_FiltersByUser(t *testing.T) {
 
 func TestProcessUpdateReservation_BadJSON_ReturnsError(t *testing.T) {
 	db := setupTestDB(t)
-
-	out := ProcessUpdateReservation(db, []byte(`{"data":{`)) // JSON roto
+	out := ProcessUpdateReservation(db, []byte(`{"data":{`))
 	assert.Equal(t, `{"error":"Formato JSON incorrecto"}`, string(out))
 }
 
 func TestProcessUpdateReservation_NotFound_ReturnsError(t *testing.T) {
 	db := setupTestDB(t)
 
-	// CORREGIDO: mechanic_id como número (int) para evitar errores de tipo en unmarshal
-	payload := `{"data":{"id":999,"status":"ACEPTADA","mechanic_id":1}}`
+	// CORREGIDO: "mechanic_id" ahora es string "1"
+	payload := `{"data":{"id":999,"status":"ACEPTADA","mechanic_id":"1"}}`
 	out := ProcessUpdateReservation(db, []byte(payload))
 
 	assert.Equal(t, `{"error":"Reserva no encontrada"}`, string(out))
@@ -161,17 +156,16 @@ func TestProcessUpdateReservation_NotFound_ReturnsError(t *testing.T) {
 func TestProcessUpdateReservation_Success_UpdatesStatusAndMechanic(t *testing.T) {
 	db := setupTestDB(t)
 
-	// crea una reserva inicial
 	r := models.Reservation{UserID: "u1", Status: "PENDIENTE"}
 	err := db.Create(&r).Error
 	assert.NoError(t, err)
 
-	// --- CORRECCIÓN AQUÍ ---
+	// CORREGIDO: "mechanic_id" pasa como string "123"
 	payload := map[string]any{
 		"data": map[string]any{
 			"id":          r.ID,
 			"status":      "ACEPTADA",
-			"mechanic_id": 123, // CORREGIDO: Enviamos un número (123) en vez de string ("123")
+			"mechanic_id": "123",
 		},
 	}
 	b, _ := json.Marshal(payload)
@@ -183,18 +177,15 @@ func TestProcessUpdateReservation_Success_UpdatesStatusAndMechanic(t *testing.T)
 	assert.NoError(t, err)
 
 	assert.Equal(t, "ACEPTADA", updated.Status)
-
-	// Ahora MechanicID es uint, comparamos directo
+	// Asumimos que tu modelo convierte el string a uint internamente,
+	// por lo que esperamos un uint(123) en la respuesta del objeto.
 	assert.Equal(t, uint(123), updated.MechanicID)
 }
 
 func TestProcessCreateReservation_DBError(t *testing.T) {
 	db := setupTestDB(t)
-
-	// Provocamos error en Create: eliminamos la tabla
 	_ = db.Migrator().DropTable(&models.Reservation{})
 
-	// CORREGIDO: Fecha ISO completa
 	inputJSON := `{"user_id":"user-err","car_id":"c1","date":"2025-10-10T00:00:00Z"}`
 	out := ProcessCreateReservation(db, []byte(inputJSON))
 
@@ -203,9 +194,8 @@ func TestProcessCreateReservation_DBError(t *testing.T) {
 
 func setupNATS(t *testing.T) (*natssrv.Server, *nats.Conn) {
 	t.Helper()
-
 	opts := &natssrv.Options{
-		Port:   -1, // puerto random
+		Port:   -1,
 		NoLog:  true,
 		NoSigs: true,
 	}
@@ -214,18 +204,15 @@ func setupNATS(t *testing.T) (*natssrv.Server, *nats.Conn) {
 		t.Fatalf("no pude crear nats server: %v", err)
 	}
 	go s.Start()
-
 	if !s.ReadyForConnections(5 * time.Second) {
 		s.Shutdown()
 		t.Fatalf("nats no quedó ready")
 	}
-
 	nc, err := nats.Connect(s.ClientURL())
 	if err != nil {
 		s.Shutdown()
 		t.Fatalf("no pude conectar a nats: %v", err)
 	}
-
 	return s, nc
 }
 
@@ -244,9 +231,7 @@ func Test_CreateReservation_NATS_DirectPayload_RespondsRaw(t *testing.T) {
 	CreateReservation(nc, db)
 	_ = nc.Flush()
 
-	// CORREGIDO: Fecha ISO completa
 	payload := []byte(`{"user_id":"u1","car_id":"c1","date":"2025-10-10T00:00:00Z"}`)
-
 	msg, err := nc.Request("reservation.create", payload, 2*time.Second)
 	assert.NoError(t, err)
 
@@ -266,7 +251,6 @@ func Test_CreateReservation_NATS_Envelope_RespondsNestFormat(t *testing.T) {
 	CreateReservation(nc, db)
 	_ = nc.Flush()
 
-	// CORREGIDO: Fecha ISO completa
 	payload := []byte(`{
         "pattern":"reservation.create",
         "data":{"user_id":"u2","car_id":"c2","date":"2025-10-11T00:00:00Z"},
